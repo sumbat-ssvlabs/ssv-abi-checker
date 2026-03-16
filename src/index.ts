@@ -3,15 +3,34 @@ export type {
   AbiItem,
   Network,
   ContractName,
+  DiffEntry,
   AbiDiffResult,
   CheckResult,
   FetchResult,
+  CommonOptions,
   CheckOptions,
   ReplaceOptions,
   FetchOptions,
+  GitHubContentEntry,
 } from "./types.js";
 
 export { NETWORKS, CONTRACT_NAMES } from "./types.js";
+
+export {
+  listNetworks,
+  listVersions,
+  fetchAbi,
+  fetchAllAbis,
+} from "./github/fetcher.js";
+export {
+  normalizeVersion,
+  resolveLatestVersion,
+  getLatestVersion,
+} from "./github/version-resolver.js";
+export { readLocalAbi, extractAbiArrayFromSource } from "./local/reader.js";
+export { writeLocalAbi } from "./local/writer.js";
+export { isAbiArray, validateAbi } from "./local/abi-detector.js";
+export { compareAbis } from "./compare/comparator.js";
 
 import type {
   CheckOptions,
