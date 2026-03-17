@@ -1,6 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { extname } from "node:path";
-import { Project, SyntaxKind, type Node } from "ts-morph";
+import { Project, SyntaxKind } from "ts-morph";
 import type { Abi } from "../types.js";
 import { isAbiArray } from "./abi-detector.js";
 
@@ -29,7 +29,17 @@ async function writeTsJsAbi(filePath: string, abi: Abi): Promise<void> {
   const project = new Project({ compilerOptions: { allowJs: true } });
   const sourceFile = project.createSourceFile("__temp__" + extname(filePath), source);
 
-  const arrayNode = findAbiArrayNode(sourceFile);
+  const arrayNode = sourceFile.getFirstDescendant((node) => {
+    if (node.getKind() !== SyntaxKind.ArrayLiteralExpression) return false;
+    try {
+      const fn = new Function(`"use strict"; return (${node.getText()});`);
+      const parsed = fn();
+      return Array.isArray(parsed) && isAbiArray(parsed);
+    } catch {
+      return false;
+    }
+  });
+
   if (!arrayNode) {
     throw new Error(
       `No ABI array found in ${filePath}. Cannot replace.`,
@@ -37,51 +47,10 @@ async function writeTsJsAbi(filePath: string, abi: Abi): Promise<void> {
   }
 
   const serialized = JSON.stringify(abi, null, 2);
-
-  const start = arrayNode.getStart();
-  const end = arrayNode.getEnd();
-
   const replaced =
-    source.substring(0, start) + serialized + source.substring(end);
+    source.substring(0, arrayNode.getStart()) +
+    serialized +
+    source.substring(arrayNode.getEnd());
 
   await writeFile(filePath, replaced, "utf-8");
-}
-
-function findAbiArrayNode(
-  sourceFile: ReturnType<Project["createSourceFile"]>,
-): Node | null {
-  for (const varDecl of sourceFile.getVariableDeclarations()) {
-    const initializer = varDecl.getInitializer();
-    if (!initializer) continue;
-
-    let arrayNode: Node | null =
-      initializer.getKind() === SyntaxKind.ArrayLiteralExpression
-        ? initializer
-        : null;
-
-    if (
-      !arrayNode &&
-      (initializer.getKind() === SyntaxKind.AsExpression ||
-        initializer.getKind() === SyntaxKind.SatisfiesExpression)
-    ) {
-      const child = initializer.getChildAtIndex(0);
-      if (child.getKind() === SyntaxKind.ArrayLiteralExpression) {
-        arrayNode = child;
-      }
-    }
-
-    if (!arrayNode) continue;
-
-    const text = arrayNode.getText();
-    try {
-      const fn = new Function(`"use strict"; return (${text});`);
-      const parsed = fn();
-      if (Array.isArray(parsed) && isAbiArray(parsed)) {
-        return arrayNode;
-      }
-    } catch {
-      continue;
-    }
-  }
-  return null;
 }

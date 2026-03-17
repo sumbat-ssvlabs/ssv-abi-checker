@@ -37,6 +37,12 @@ describe("readLocalAbi", () => {
     expect((abi[0] as { name: string }).name).toBe("registerOperator");
   });
 
+  it("reads a TypeScript file with export default", async () => {
+    const abi = await readLocalAbi(resolve(fixtures, "sample-default.ts"));
+    expect(abi).toHaveLength(2);
+    expect((abi[0] as { name: string }).name).toBe("registerOperator");
+  });
+
   it("throws for a TS file without ABI array", async () => {
     await expect(readLocalAbi(resolve(fixtures, "not-abi.ts"))).rejects.toThrow(
       "No exported ABI array"
@@ -47,15 +53,18 @@ describe("readLocalAbi", () => {
 describe("writeLocalAbi", () => {
   const tmpJson = resolve(fixtures, "_tmp_write.json");
   const tmpTs = resolve(fixtures, "_tmp_write.ts");
+  const tmpDefaultTs = resolve(fixtures, "_tmp_write_default.ts");
 
   beforeEach(async () => {
     await copyFile(resolve(fixtures, "sample.json"), tmpJson);
     await copyFile(resolve(fixtures, "sample.ts"), tmpTs);
+    await copyFile(resolve(fixtures, "sample-default.ts"), tmpDefaultTs);
   });
 
   afterEach(async () => {
     await unlink(tmpJson).catch(() => {});
     await unlink(tmpTs).catch(() => {});
+    await unlink(tmpDefaultTs).catch(() => {});
   });
 
   it("replaces a JSON file entirely", async () => {
@@ -66,14 +75,19 @@ describe("writeLocalAbi", () => {
   });
 
   it("replaces only the array in a TS file", async () => {
-    console.log("tmpTs:", tmpTs);
-    console.log("replacementAbi:", replacementAbi);
     await writeLocalAbi(tmpTs, replacementAbi);
     const content = await readFile(tmpTs, "utf-8");
-    console.log("content:", content);
     expect(content).toContain("export const ssvNetworkAbi =");
     expect(content).toContain('"liquidate"');
     expect(content).toContain("as const");
+    expect(content).not.toContain("registerOperator");
+  });
+
+  it("replaces the array in a TS file with export default", async () => {
+    await writeLocalAbi(tmpDefaultTs, replacementAbi);
+    const content = await readFile(tmpDefaultTs, "utf-8");
+    expect(content).toContain("export default");
+    expect(content).toContain('"liquidate"');
     expect(content).not.toContain("registerOperator");
   });
 });

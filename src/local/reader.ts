@@ -30,9 +30,8 @@ async function readTsJsAbi(filePath: string): Promise<Abi> {
 }
 
 /**
- * Parse the source file and find the first exported variable whose initializer
- * is an array literal that looks like an ABI.
- * Returns both the raw text of the array and the variable name.
+ * Walks the AST to find the first ArrayLiteralExpression that is a valid ABI.
+ * Works with any structure: named exports, default exports, as const, satisfies, etc.
  */
 export function extractAbiArrayFromSource(filePath: string): {
   arrayText: string;
@@ -41,61 +40,26 @@ export function extractAbiArrayFromSource(filePath: string): {
   const project = new Project({ compilerOptions: { allowJs: true } });
   const sourceFile = project.addSourceFileAtPath(filePath);
 
-  for (const varDecl of sourceFile.getVariableDeclarations()) {
-    const initializer = varDecl.getInitializer();
-    if (!initializer || initializer.getKind() !== SyntaxKind.ArrayLiteralExpression) {
-      continue;
-    }
-
-    const text = initializer.getText();
+  const abiNode = sourceFile.getFirstDescendant((node) => {
+    if (node.getKind() !== SyntaxKind.ArrayLiteralExpression) return false;
     try {
-      const parsed = parseArrayText(text);
-      if (isAbiArray(parsed)) {
-        return { arrayText: text, variableName: varDecl.getName() };
-      }
+      const parsed = parseArrayText(node.getText());
+      return isAbiArray(parsed);
     } catch {
-      continue;
+      return false;
     }
+  });
+
+  if (!abiNode) {
+    throw new Error(
+      `No exported ABI array found in ${filePath}. ` +
+        "Expected an array literal containing ABI entries.",
+    );
   }
 
-  // Also check `as const` or type-asserted arrays
-  for (const varDecl of sourceFile.getVariableDeclarations()) {
-    const initializer = varDecl.getInitializer();
-    if (!initializer) continue;
-
-    // Handle `[...] as const` or `[...] satisfies ...`
-    const asExpr =
-      initializer.getKind() === SyntaxKind.AsExpression ||
-      initializer.getKind() === SyntaxKind.SatisfiesExpression
-        ? initializer.getChildAtIndex(0)
-        : null;
-
-    if (
-      asExpr &&
-      asExpr.getKind() === SyntaxKind.ArrayLiteralExpression
-    ) {
-      const text = asExpr.getText();
-      try {
-        const parsed = parseArrayText(text);
-        if (isAbiArray(parsed)) {
-          return { arrayText: text, variableName: varDecl.getName() };
-        }
-      } catch {
-        continue;
-      }
-    }
-  }
-
-  throw new Error(
-    `No exported ABI array found in ${filePath}. ` +
-      "Expected a variable declaration with an array literal containing ABI entries.",
-  );
+  return { arrayText: abiNode.getText(), variableName: "abi" };
 }
 
-/**
- * Safely evaluate array literal text into a JS array.
- * Handles trailing commas, unquoted keys (JS object literal style), etc.
- */
 function parseArrayText(text: string): unknown[] {
   const fn = new Function(`"use strict"; return (${text});`);
   const result = fn();
