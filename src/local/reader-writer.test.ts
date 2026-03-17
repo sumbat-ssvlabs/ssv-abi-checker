@@ -74,13 +74,16 @@ describe("writeLocalAbi", () => {
     expect(content[0].name).toBe("liquidate");
   });
 
-  it("replaces only the array in a TS file", async () => {
+  it("replaces only the ABI array in a TS file, keeping other data intact", async () => {
     await writeLocalAbi(tmpTs, replacementAbi);
     const content = await readFile(tmpTs, "utf-8");
     expect(content).toContain("export const ssvNetworkAbi =");
     expect(content).toContain('"liquidate"');
     expect(content).toContain("as const");
     expect(content).not.toContain("registerOperator");
+    expect(content).toContain("someRandomData");
+    expect(content).toContain("moreRandomData");
+    expect(content).toContain('"bar"');
   });
 
   it("replaces the array in a TS file with export default", async () => {
